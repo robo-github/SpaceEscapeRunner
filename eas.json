@@ -6,8 +6,11 @@
     "preview": {
       "android": {
         "buildType": "apk"
-      }
+      },
+      "node": "18.x"
     },
-    "production": {}
+    "production": {
+      "node": "18.x"
+    }
   }
 }
