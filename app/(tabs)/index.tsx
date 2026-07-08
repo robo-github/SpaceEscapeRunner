@@ -7,23 +7,21 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 // Spaceship constants
-const SHIP_WIDTH = 70; // Slightly wider for new wings
-const SHIP_HEIGHT = 70; // 44 (body) + 12 (thruster) + some overlap
+const SHIP_WIDTH = 70; 
+const SHIP_HEIGHT = 70; 
 const SHIP_Y = SCREEN_HEIGHT - 220;
 
 // Asteroid & Game constants
 const ASTEROID_SIZE = 50;
-const MOVEMENT_STEP = 40; // Increased step since it animates smoothly
-const GAME_SPEED = 9; // Lowered from 15, but runs at 60 FPS now (16ms)
+const MOVEMENT_STEP = 40; 
+const GAME_SPEED = 9; 
 
 export default function HomeScreen() {
   // --- 1. SHIP STATE (ANIMATED) ---
-  // Using Animated.Value for smooth hardware-accelerated movement
   const initialShipX = SCREEN_WIDTH / 2 - SHIP_WIDTH / 2;
   const shipXAnim = useRef(new Animated.Value(initialShipX)).current;
   const shipXRef = useRef(initialShipX);
 
-  // Sync Animated.Value to a ref so the game loop can read it synchronously
   useEffect(() => {
     const id = shipXAnim.addListener(({ value }) => {
       shipXRef.current = value;
@@ -37,6 +35,7 @@ export default function HomeScreen() {
     asteroidY: -ASTEROID_SIZE, 
     score: 0,
     gameOver: false,
+    gameStarted: false, // NEW: Start screen state
   });
 
   const [highScore, setHighScore] = useState(0);
@@ -70,11 +69,11 @@ export default function HomeScreen() {
     saveHighScore();
   }, [gameState.gameOver]);
 
-  // --- 4. GAME LOOP & COLLISION DETECTION (60 FPS) ---
+  // --- 4. GAME LOOP & COLLISION DETECTION ---
   useEffect(() => {
-    if (gameState.gameOver) return;
+    // If the game hasn't started or is over, do not run the loop
+    if (!gameState.gameStarted || gameState.gameOver) return;
 
-    // 16ms interval for ~60 frames per second
     const intervalId = setInterval(() => {
       setGameState((prev) => {
         const currentShipX = shipXRef.current;
@@ -82,7 +81,7 @@ export default function HomeScreen() {
         
         // COLLISION DETECTION 
         const isColliding = 
-          prev.asteroidX < currentShipX + SHIP_WIDTH - 10 &&  // -10 for a slightly forgiving hit-box
+          prev.asteroidX < currentShipX + SHIP_WIDTH - 10 &&  
           prev.asteroidX + ASTEROID_SIZE > currentShipX + 10 && 
           newY < SHIP_Y + SHIP_HEIGHT &&                 
           newY + ASTEROID_SIZE > SHIP_Y + 10;                 
@@ -106,20 +105,22 @@ export default function HomeScreen() {
     }, 16); 
 
     return () => clearInterval(intervalId);
-  }, [gameState.gameOver]);
+  }, [gameState.gameStarted, gameState.gameOver]);
 
   // --- 5. SMOOTH CONTROLS ---
   const moveLeft = () => {
+    if (!gameState.gameStarted || gameState.gameOver) return;
     const newX = Math.max(0, shipXRef.current - MOVEMENT_STEP);
     Animated.timing(shipXAnim, {
       toValue: newX,
       duration: 150,
       easing: Easing.out(Easing.quad),
-      useNativeDriver: true, // Smooth 60fps native animation
+      useNativeDriver: true,
     }).start();
   };
 
   const moveRight = () => {
+    if (!gameState.gameStarted || gameState.gameOver) return;
     const newX = Math.min(SCREEN_WIDTH - SHIP_WIDTH, shipXRef.current + MOVEMENT_STEP);
     Animated.timing(shipXAnim, {
       toValue: newX,
@@ -129,12 +130,13 @@ export default function HomeScreen() {
     }).start();
   };
 
-  const restartGame = () => {
+  const startGame = () => {
     setGameState({
       asteroidX: Math.random() * (SCREEN_WIDTH - ASTEROID_SIZE),
       asteroidY: -ASTEROID_SIZE,
       score: 0,
       gameOver: false,
+      gameStarted: true,
     });
     // Instantly reset ship position
     shipXAnim.setValue(initialShipX);
@@ -146,10 +148,12 @@ export default function HomeScreen() {
       style={styles.container}
     >
       {/* Modern Glassmorphic Score Display */}
-      <View style={styles.scoreContainer}>
-        <Text style={styles.scoreText}>SCORE: {gameState.score}</Text>
-        <Text style={styles.highScoreText}>BEST: {highScore}</Text>
-      </View>
+      {gameState.gameStarted && (
+        <View style={styles.scoreContainer}>
+          <Text style={styles.scoreText}>SCORE: {gameState.score}</Text>
+          <Text style={styles.highScoreText}>BEST: {highScore}</Text>
+        </View>
+      )}
 
       {/* Upgraded Spaceship */}
       <Animated.View style={[styles.spaceshipContainer, { top: SHIP_Y, transform: [{ translateX: shipXAnim }] }]}>
@@ -161,11 +165,22 @@ export default function HomeScreen() {
       </Animated.View>
 
       {/* Upgraded Asteroid */}
-      {!gameState.gameOver && (
+      {gameState.gameStarted && !gameState.gameOver && (
         <View style={[styles.asteroid, { left: gameState.asteroidX, top: gameState.asteroidY }]}>
           <View style={styles.crater1} />
           <View style={styles.crater2} />
           <View style={styles.crater3} />
+        </View>
+      )}
+
+      {/* Start Screen */}
+      {!gameState.gameStarted && !gameState.gameOver && (
+        <View style={styles.gameOverOverlay}>
+          <Text style={styles.mainTitleText}>SPACE ESCAPE</Text>
+          <Text style={styles.finalScoreText}>High Score: {highScore}</Text>
+          <TouchableOpacity style={styles.restartButton} onPress={startGame}>
+            <Text style={styles.restartButtonText}>START MISSION</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -179,7 +194,7 @@ export default function HomeScreen() {
             <Text style={styles.newHighScoreText}>🚀 NEW RECORD! 🚀</Text>
           )}
 
-          <TouchableOpacity style={styles.restartButton} onPress={restartGame}>
+          <TouchableOpacity style={styles.restartButton} onPress={startGame}>
             <Text style={styles.restartButtonText}>REBOOT SEQUENCE</Text>
           </TouchableOpacity>
         </View>
@@ -237,7 +252,6 @@ const styles = StyleSheet.create({
     width: SHIP_WIDTH,
     alignItems: 'center',
     zIndex: 5,
-    // Note: left is removed, horizontal position is handled by transform: [{ translateX }]
   },
   shipBody: {
     width: 36,
@@ -327,6 +341,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 20,
+  },
+  mainTitleText: {
+    color: '#38BDF8',
+    fontSize: 42,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginBottom: 10,
   },
   gameOverTitle: {
     color: '#F43F5E', 
