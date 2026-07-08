@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, TouchableOpacity, Text, Dimensions } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -18,8 +19,6 @@ export default function HomeScreen() {
   // --- 1. SHIP STATE ---
   const [shipX, setShipX] = useState(SCREEN_WIDTH / 2 - SHIP_WIDTH / 2);
   
-  // We use a ref for shipX so our Game Loop (setInterval) can always read the 
-  // most recent ship position without needing to restart the interval every time we move.
   const shipXRef = useRef(shipX);
   useEffect(() => {
     shipXRef.current = shipX;
@@ -33,48 +32,78 @@ export default function HomeScreen() {
     gameOver: false,
   });
 
-  // --- 3. GAME LOOP & COLLISION DETECTION ---
+  const [highScore, setHighScore] = useState(0);
+
+  // --- 3. LOAD HIGH SCORE ON START ---
   useEffect(() => {
-    // If the game is over, stop the loop
+    const loadHighScore = async () => {
+      try {
+        const savedScore = await AsyncStorage.getItem('highScore');
+        if (savedScore !== null) {
+          setHighScore(parseInt(savedScore, 10)); // Convert string back to number
+        }
+      } catch (error) {
+        console.error('Error loading high score:', error);
+      }
+    };
+    loadHighScore();
+  }, []); // Empty dependency array means this runs only once when the app starts
+
+  // --- 4. SAVE HIGH SCORE ON GAME OVER ---
+  useEffect(() => {
+    const saveHighScore = async () => {
+      // Only check and save when the game transitions to a "game over" state
+      if (gameState.gameOver && gameState.score > highScore) {
+        setHighScore(gameState.score); // Update the state immediately for UI
+        try {
+          // AsyncStorage only saves strings, so we convert the number to a string
+          await AsyncStorage.setItem('highScore', gameState.score.toString());
+        } catch (error) {
+          console.error('Error saving high score:', error);
+        }
+      }
+    };
+    saveHighScore();
+  }, [gameState.gameOver]); // Runs whenever gameOver state changes
+
+  // --- 5. GAME LOOP & COLLISION DETECTION ---
+  useEffect(() => {
     if (gameState.gameOver) return;
 
     const intervalId = setInterval(() => {
       setGameState((prev) => {
         const currentShipX = shipXRef.current;
-        const newY = prev.asteroidY + GAME_SPEED; // Calculate next position
+        const newY = prev.asteroidY + GAME_SPEED; 
         
-        // COLLISION DETECTION (Axis-Aligned Bounding Box)
-        // We check if the asteroid rectangle overlaps with the ship rectangle.
+        // COLLISION DETECTION 
         const isColliding = 
-          prev.asteroidX < currentShipX + SHIP_WIDTH &&  // Asteroid left edge < Ship right edge
-          prev.asteroidX + ASTEROID_SIZE > currentShipX && // Asteroid right edge > Ship left edge
-          newY < SHIP_Y + SHIP_HEIGHT &&                 // Asteroid top edge < Ship bottom edge
-          newY + ASTEROID_SIZE > SHIP_Y;                 // Asteroid bottom edge > Ship top edge
+          prev.asteroidX < currentShipX + SHIP_WIDTH &&  
+          prev.asteroidX + ASTEROID_SIZE > currentShipX && 
+          newY < SHIP_Y + SHIP_HEIGHT &&                 
+          newY + ASTEROID_SIZE > SHIP_Y;                 
 
         if (isColliding) {
-          return { ...prev, gameOver: true }; // Stop game, show Game Over screen
+          return { ...prev, gameOver: true }; 
         }
 
-        // DODGED ASTEROID (Passed the bottom of the screen)
+        // DODGED ASTEROID
         if (newY > SCREEN_HEIGHT) {
           return {
             ...prev,
-            asteroidY: -ASTEROID_SIZE, // Reset to top
-            asteroidX: Math.random() * (SCREEN_WIDTH - ASTEROID_SIZE), // New random X position
-            score: prev.score + 1, // Increase the score!
+            asteroidY: -ASTEROID_SIZE, 
+            asteroidX: Math.random() * (SCREEN_WIDTH - ASTEROID_SIZE), 
+            score: prev.score + 1, 
           };
         }
 
-        // NORMAL MOVEMENT: Just move the asteroid down
         return { ...prev, asteroidY: newY };
       });
-    }, 30); // Runs roughly 33 times a second (30ms per frame)
+    }, 30); 
 
-    // Cleanup function stops the interval when the component unmounts or game over state changes
     return () => clearInterval(intervalId);
   }, [gameState.gameOver]);
 
-  // --- 4. CONTROLS ---
+  // --- 6. CONTROLS & RESTART ---
   const moveLeft = () => {
     setShipX((prevX) => Math.max(0, prevX - MOVEMENT_STEP));
   };
@@ -84,13 +113,15 @@ export default function HomeScreen() {
   };
 
   const restartGame = () => {
+    // 1. Reset asteroid position and score, remove game over flag
     setGameState({
       asteroidX: Math.random() * (SCREEN_WIDTH - ASTEROID_SIZE),
       asteroidY: -ASTEROID_SIZE,
       score: 0,
       gameOver: false,
     });
-    setShipX(SCREEN_WIDTH / 2 - SHIP_WIDTH / 2); // Recenter ship
+    // 2. Reset spaceship position to the center of the screen
+    setShipX(SCREEN_WIDTH / 2 - SHIP_WIDTH / 2);
   };
 
   return (
@@ -98,6 +129,7 @@ export default function HomeScreen() {
       {/* Score Display */}
       <View style={styles.scoreContainer}>
         <Text style={styles.scoreText}>Score: {gameState.score}</Text>
+        <Text style={styles.highScoreText}>Best: {highScore}</Text>
       </View>
 
       {/* Spaceship */}
@@ -108,7 +140,7 @@ export default function HomeScreen() {
         <View style={styles.shipThruster} />
       </View>
 
-      {/* Asteroid (Hidden if Game Over) */}
+      {/* Asteroid */}
       {!gameState.gameOver && (
         <View 
           style={[
@@ -123,6 +155,11 @@ export default function HomeScreen() {
         <View style={styles.gameOverOverlay}>
           <Text style={styles.gameOverTitle}>GAME OVER</Text>
           <Text style={styles.finalScoreText}>Final Score: {gameState.score}</Text>
+          
+          {gameState.score >= highScore && gameState.score > 0 && (
+            <Text style={styles.newHighScoreText}>🎉 New High Score! 🎉</Text>
+          )}
+
           <TouchableOpacity style={styles.restartButton} onPress={restartGame}>
             <Text style={styles.controlText}>Play Again</Text>
           </TouchableOpacity>
@@ -145,7 +182,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F172A', // Dark space-like background
+    backgroundColor: '#0F172A', 
   },
   scoreContainer: {
     position: 'absolute',
@@ -158,6 +195,11 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 24,
     fontWeight: 'bold',
+  },
+  highScoreText: {
+    color: '#94A3B8', // Lighter grey for high score
+    fontSize: 16,
+    marginTop: 4,
   },
   spaceshipContainer: {
     position: 'absolute',
@@ -188,7 +230,7 @@ const styles = StyleSheet.create({
   },
   shipWings: {
     position: 'absolute',
-    top: 40, // Drops the wings down slightly past the nose
+    top: 40, 
     width: 60,
     height: 15,
     backgroundColor: '#EF4444', 
@@ -206,21 +248,21 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: ASTEROID_SIZE,
     height: ASTEROID_SIZE,
-    backgroundColor: '#94A3B8', // Slate grey
-    borderRadius: ASTEROID_SIZE / 2, // Perfect circle
+    backgroundColor: '#94A3B8', 
+    borderRadius: ASTEROID_SIZE / 2, 
     borderWidth: 3,
     borderColor: '#64748B',
     zIndex: 4,
   },
   gameOverOverlay: {
-    ...StyleSheet.absoluteFillObject, // Covers the entire screen
-    backgroundColor: 'rgba(0, 0, 0, 0.85)', // Semi-transparent black background
+    ...StyleSheet.absoluteFillObject, 
+    backgroundColor: 'rgba(0, 0, 0, 0.85)', 
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 20,
   },
   gameOverTitle: {
-    color: '#EF4444', // Red text
+    color: '#EF4444', 
     fontSize: 48,
     fontWeight: 'bold',
     marginBottom: 10,
@@ -228,13 +270,20 @@ const styles = StyleSheet.create({
   finalScoreText: {
     color: '#FFF',
     fontSize: 24,
+    marginBottom: 10,
+  },
+  newHighScoreText: {
+    color: '#F59E0B', // Gold/orange color
+    fontSize: 20,
+    fontWeight: 'bold',
     marginBottom: 30,
   },
   restartButton: {
-    backgroundColor: '#10B981', // Green button
+    backgroundColor: '#10B981', 
     paddingVertical: 15,
     paddingHorizontal: 40,
     borderRadius: 12,
+    marginTop: 20,
   },
   controlsContainer: {
     position: 'absolute',
@@ -243,7 +292,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-evenly',
     alignItems: 'center',
-    paddingBottom: 40, // safe area padding
+    paddingBottom: 40, 
     paddingTop: 20,
     backgroundColor: '#1E293B',
     borderTopWidth: 2,
@@ -255,8 +304,8 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     paddingHorizontal: 30,
     borderRadius: 12,
-    elevation: 3, // Android shadow
-    shadowColor: '#000', // iOS shadow
+    elevation: 3, 
+    shadowColor: '#000', 
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
