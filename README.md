@@ -1,50 +1,45 @@
-# Welcome to your Expo app 👋
+# 🚀 Space Escape Runner
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A fast-paced, hyper-casual space dodging game built with React Native and Expo!
 
-## Get started
+## 🎮 How to Play
+- **Objective:** Survive as long as possible by dodging the falling asteroids.
+- **Controls:** Tap the **LEFT** and **RIGHT** buttons at the bottom of the screen to smoothly glide your spaceship out of danger.
+- **Scoring:** Every time an asteroid safely passes you, you earn a point. Your High Score is automatically saved!
 
-1. Install dependencies
+## 📥 Download the Game (Android APK)
+You can download and install this game directly on your Android device!
+1. **[Click here to view the Expo Dashboard](https://expo.dev/accounts/anand101/projects/SpaceEscapeRunner)**.
+2. Find the latest successful Android build and click **Download**.
+3. Transfer the `.apk` file to your phone (or download it directly on your phone).
+4. Tap the file to install the game. *(Note: You may need to allow "Install from Unknown Sources" in your Android settings).*
 
+## 🛠️ Local Development
+
+### Requirements
+- Node.js (v18+)
+- npm
+
+### Getting Started
+1. Install dependencies:
    ```bash
    npm install
    ```
-
-2. Start the app
-
+2. Start the Expo development server:
    ```bash
    npx expo start
    ```
+3. Press `a` to open on an Android emulator, `i` for iOS simulator, or scan the QR code with the Expo Go app on your physical device.
 
-In the output, you'll find options to open the app in a
+## 📦 Building the App (EAS)
+This project is configured to use Expo Application Services (EAS). 
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
+**To build a new standalone APK:**
 ```bash
-npm run reset-project
+eas build -p android --profile preview
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+**To build an AAB for the Google Play Store:**
+```bash
+eas build -p android --profile production
+```

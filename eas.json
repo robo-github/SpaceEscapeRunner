@@ -7,10 +7,10 @@
       "android": {
         "buildType": "apk"
       },
-      "node": "18.x"
+      "node": "18"
     },
     "production": {
-      "node": "18.x"
+      "node": "18"
     }
   }
 }
