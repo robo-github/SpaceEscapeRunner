@@ -187,7 +187,7 @@ export default function HomeScreen() {
       {/* Game Over Screen */}
       {gameState.gameOver && (
         <View style={styles.gameOverOverlay}>
-          <Text style={styles.gameOverTitle}>SYSTEM FAILURE</Text>
+          <Text style={styles.gameOverTitle}>FAILED</Text>
           <Text style={styles.finalScoreText}>Final Score: {gameState.score}</Text>
           
           {gameState.score >= highScore && gameState.score > 0 && (
@@ -195,7 +195,7 @@ export default function HomeScreen() {
           )}
 
           <TouchableOpacity style={styles.restartButton} onPress={startGame}>
-            <Text style={styles.restartButtonText}>REBOOT SEQUENCE</Text>
+            <Text style={styles.restartButtonText}>RESTART</Text>
           </TouchableOpacity>
         </View>
       )}
