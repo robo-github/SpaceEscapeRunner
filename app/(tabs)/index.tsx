@@ -1,62 +1,66 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, TouchableOpacity, Text, Dimensions } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, Text, Dimensions, Animated, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 // Spaceship constants
-const SHIP_WIDTH = 60;
-const SHIP_HEIGHT = 75; // Total height: nose (25) + body (40) + thruster (10)
-const SHIP_Y = SCREEN_HEIGHT - 220; // Fixed vertical position above the controls
+const SHIP_WIDTH = 70; // Slightly wider for new wings
+const SHIP_HEIGHT = 70; // 44 (body) + 12 (thruster) + some overlap
+const SHIP_Y = SCREEN_HEIGHT - 220;
 
 // Asteroid & Game constants
 const ASTEROID_SIZE = 50;
-const MOVEMENT_STEP = 30;
-const GAME_SPEED = 15; // Pixels the asteroid falls per frame
+const MOVEMENT_STEP = 40; // Increased step since it animates smoothly
+const GAME_SPEED = 9; // Lowered from 15, but runs at 60 FPS now (16ms)
 
 export default function HomeScreen() {
-  // --- 1. SHIP STATE ---
-  const [shipX, setShipX] = useState(SCREEN_WIDTH / 2 - SHIP_WIDTH / 2);
-  
-  const shipXRef = useRef(shipX);
+  // --- 1. SHIP STATE (ANIMATED) ---
+  // Using Animated.Value for smooth hardware-accelerated movement
+  const initialShipX = SCREEN_WIDTH / 2 - SHIP_WIDTH / 2;
+  const shipXAnim = useRef(new Animated.Value(initialShipX)).current;
+  const shipXRef = useRef(initialShipX);
+
+  // Sync Animated.Value to a ref so the game loop can read it synchronously
   useEffect(() => {
-    shipXRef.current = shipX;
-  }, [shipX]);
+    const id = shipXAnim.addListener(({ value }) => {
+      shipXRef.current = value;
+    });
+    return () => shipXAnim.removeListener(id);
+  }, [shipXAnim]);
 
   // --- 2. GAME STATE ---
   const [gameState, setGameState] = useState({
     asteroidX: Math.random() * (SCREEN_WIDTH - ASTEROID_SIZE),
-    asteroidY: -ASTEROID_SIZE, // Start above the screen
+    asteroidY: -ASTEROID_SIZE, 
     score: 0,
     gameOver: false,
   });
 
   const [highScore, setHighScore] = useState(0);
 
-  // --- 3. LOAD HIGH SCORE ON START ---
+  // --- 3. LOAD/SAVE HIGH SCORE ---
   useEffect(() => {
     const loadHighScore = async () => {
       try {
         const savedScore = await AsyncStorage.getItem('highScore');
         if (savedScore !== null) {
-          setHighScore(parseInt(savedScore, 10)); // Convert string back to number
+          setHighScore(parseInt(savedScore, 10));
         }
       } catch (error) {
         console.error('Error loading high score:', error);
       }
     };
     loadHighScore();
-  }, []); // Empty dependency array means this runs only once when the app starts
+  }, []);
 
-  // --- 4. SAVE HIGH SCORE ON GAME OVER ---
   useEffect(() => {
     const saveHighScore = async () => {
-      // Only check and save when the game transitions to a "game over" state
       if (gameState.gameOver && gameState.score > highScore) {
-        setHighScore(gameState.score); // Update the state immediately for UI
+        setHighScore(gameState.score); 
         try {
-          // AsyncStorage only saves strings, so we convert the number to a string
           await AsyncStorage.setItem('highScore', gameState.score.toString());
         } catch (error) {
           console.error('Error saving high score:', error);
@@ -64,12 +68,13 @@ export default function HomeScreen() {
       }
     };
     saveHighScore();
-  }, [gameState.gameOver]); // Runs whenever gameOver state changes
+  }, [gameState.gameOver]);
 
-  // --- 5. GAME LOOP & COLLISION DETECTION ---
+  // --- 4. GAME LOOP & COLLISION DETECTION (60 FPS) ---
   useEffect(() => {
     if (gameState.gameOver) return;
 
+    // 16ms interval for ~60 frames per second
     const intervalId = setInterval(() => {
       setGameState((prev) => {
         const currentShipX = shipXRef.current;
@@ -77,10 +82,10 @@ export default function HomeScreen() {
         
         // COLLISION DETECTION 
         const isColliding = 
-          prev.asteroidX < currentShipX + SHIP_WIDTH &&  
-          prev.asteroidX + ASTEROID_SIZE > currentShipX && 
+          prev.asteroidX < currentShipX + SHIP_WIDTH - 10 &&  // -10 for a slightly forgiving hit-box
+          prev.asteroidX + ASTEROID_SIZE > currentShipX + 10 && 
           newY < SHIP_Y + SHIP_HEIGHT &&                 
-          newY + ASTEROID_SIZE > SHIP_Y;                 
+          newY + ASTEROID_SIZE > SHIP_Y + 10;                 
 
         if (isColliding) {
           return { ...prev, gameOver: true }; 
@@ -98,161 +103,223 @@ export default function HomeScreen() {
 
         return { ...prev, asteroidY: newY };
       });
-    }, 30); 
+    }, 16); 
 
     return () => clearInterval(intervalId);
   }, [gameState.gameOver]);
 
-  // --- 6. CONTROLS & RESTART ---
+  // --- 5. SMOOTH CONTROLS ---
   const moveLeft = () => {
-    setShipX((prevX) => Math.max(0, prevX - MOVEMENT_STEP));
+    const newX = Math.max(0, shipXRef.current - MOVEMENT_STEP);
+    Animated.timing(shipXAnim, {
+      toValue: newX,
+      duration: 150,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true, // Smooth 60fps native animation
+    }).start();
   };
 
   const moveRight = () => {
-    setShipX((prevX) => Math.min(SCREEN_WIDTH - SHIP_WIDTH, prevX + MOVEMENT_STEP));
+    const newX = Math.min(SCREEN_WIDTH - SHIP_WIDTH, shipXRef.current + MOVEMENT_STEP);
+    Animated.timing(shipXAnim, {
+      toValue: newX,
+      duration: 150,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true, 
+    }).start();
   };
 
   const restartGame = () => {
-    // 1. Reset asteroid position and score, remove game over flag
     setGameState({
       asteroidX: Math.random() * (SCREEN_WIDTH - ASTEROID_SIZE),
       asteroidY: -ASTEROID_SIZE,
       score: 0,
       gameOver: false,
     });
-    // 2. Reset spaceship position to the center of the screen
-    setShipX(SCREEN_WIDTH / 2 - SHIP_WIDTH / 2);
+    // Instantly reset ship position
+    shipXAnim.setValue(initialShipX);
   };
 
   return (
-    <View style={styles.container}>
-      {/* Score Display */}
+    <LinearGradient 
+      colors={['#0F172A', '#1E1B4B', '#000000']} 
+      style={styles.container}
+    >
+      {/* Modern Glassmorphic Score Display */}
       <View style={styles.scoreContainer}>
-        <Text style={styles.scoreText}>Score: {gameState.score}</Text>
-        <Text style={styles.highScoreText}>Best: {highScore}</Text>
+        <Text style={styles.scoreText}>SCORE: {gameState.score}</Text>
+        <Text style={styles.highScoreText}>BEST: {highScore}</Text>
       </View>
 
-      {/* Spaceship */}
-      <View style={[styles.spaceshipContainer, { left: shipX, top: SHIP_Y }]}>
-        <View style={styles.shipNose} />
-        <View style={styles.shipBody} />
+      {/* Upgraded Spaceship */}
+      <Animated.View style={[styles.spaceshipContainer, { top: SHIP_Y, transform: [{ translateX: shipXAnim }] }]}>
         <View style={styles.shipWings} />
+        <View style={styles.shipBody}>
+          <View style={styles.cockpit} />
+        </View>
         <View style={styles.shipThruster} />
-      </View>
+      </Animated.View>
 
-      {/* Asteroid */}
+      {/* Upgraded Asteroid */}
       {!gameState.gameOver && (
-        <View 
-          style={[
-            styles.asteroid, 
-            { left: gameState.asteroidX, top: gameState.asteroidY }
-          ]} 
-        />
+        <View style={[styles.asteroid, { left: gameState.asteroidX, top: gameState.asteroidY }]}>
+          <View style={styles.crater1} />
+          <View style={styles.crater2} />
+          <View style={styles.crater3} />
+        </View>
       )}
 
       {/* Game Over Screen */}
       {gameState.gameOver && (
         <View style={styles.gameOverOverlay}>
-          <Text style={styles.gameOverTitle}>GAME OVER</Text>
+          <Text style={styles.gameOverTitle}>SYSTEM FAILURE</Text>
           <Text style={styles.finalScoreText}>Final Score: {gameState.score}</Text>
           
           {gameState.score >= highScore && gameState.score > 0 && (
-            <Text style={styles.newHighScoreText}>🎉 New High Score! 🎉</Text>
+            <Text style={styles.newHighScoreText}>🚀 NEW RECORD! 🚀</Text>
           )}
 
           <TouchableOpacity style={styles.restartButton} onPress={restartGame}>
-            <Text style={styles.controlText}>Play Again</Text>
+            <Text style={styles.restartButtonText}>REBOOT SEQUENCE</Text>
           </TouchableOpacity>
         </View>
       )}
 
       {/* Controls Area */}
-      <View style={styles.controlsContainer}>
-        <TouchableOpacity style={styles.controlButton} onPress={moveLeft}>
-          <Text style={styles.controlText}>Move Left</Text>
+      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.controlsContainer}>
+        <TouchableOpacity style={styles.controlButton} onPress={moveLeft} activeOpacity={0.7}>
+          <Text style={styles.controlText}>← LEFT</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.controlButton} onPress={moveRight}>
-          <Text style={styles.controlText}>Move Right</Text>
+        <TouchableOpacity style={styles.controlButton} onPress={moveRight} activeOpacity={0.7}>
+          <Text style={styles.controlText}>RIGHT →</Text>
         </TouchableOpacity>
-      </View>
-    </View>
+      </LinearGradient>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F172A', 
   },
   scoreContainer: {
     position: 'absolute',
-    top: 60,
-    width: '100%',
+    top: 70,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 40,
+    paddingVertical: 12,
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
     zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
   },
   scoreText: {
     color: '#FFF',
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
   highScoreText: {
-    color: '#94A3B8', // Lighter grey for high score
-    fontSize: 16,
-    marginTop: 4,
+    color: '#38BDF8', 
+    fontSize: 14,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+    marginTop: 2,
   },
   spaceshipContainer: {
     position: 'absolute',
     width: SHIP_WIDTH,
-    height: SHIP_HEIGHT,
     alignItems: 'center',
     zIndex: 5,
-  },
-  shipNose: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 15,
-    borderRightWidth: 15,
-    borderBottomWidth: 25,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: '#38BDF8', 
+    // Note: left is removed, horizontal position is handled by transform: [{ translateX }]
   },
   shipBody: {
-    width: 30,
-    height: 40,
-    backgroundColor: '#E2E8F0', 
-    borderTopLeftRadius: 5,
-    borderTopRightRadius: 5,
+    width: 36,
+    height: 50,
+    backgroundColor: '#F8FAFC', 
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderBottomLeftRadius: 6,
+    borderBottomRightRadius: 6,
     zIndex: 2, 
+    alignItems: 'center',
+    shadowColor: '#FFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  cockpit: {
+    width: 18,
+    height: 22,
+    backgroundColor: '#0EA5E9',
+    borderRadius: 9,
+    marginTop: 10,
+    borderWidth: 1.5,
+    borderColor: '#7DD3FC',
   },
   shipWings: {
     position: 'absolute',
-    top: 40, 
-    width: 60,
-    height: 15,
-    backgroundColor: '#EF4444', 
-    borderRadius: 5,
+    top: 25, 
+    width: 70,
+    height: 25,
+    backgroundColor: '#E11D48', 
+    borderTopLeftRadius: 35,
+    borderTopRightRadius: 35,
+    borderBottomLeftRadius: 5,
+    borderBottomRightRadius: 5,
     zIndex: 1, 
   },
   shipThruster: {
-    width: 14,
-    height: 10,
+    width: 16,
+    height: 14,
     backgroundColor: '#F59E0B', 
-    borderBottomLeftRadius: 5,
-    borderBottomRightRadius: 5,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 10,
   },
   asteroid: {
     position: 'absolute',
     width: ASTEROID_SIZE,
     height: ASTEROID_SIZE,
-    backgroundColor: '#94A3B8', 
+    backgroundColor: '#475569', 
     borderRadius: ASTEROID_SIZE / 2, 
-    borderWidth: 3,
-    borderColor: '#64748B',
+    borderWidth: 2,
+    borderColor: '#334155',
     zIndex: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  crater1: {
+    position: 'absolute',
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: '#334155',
+    top: 8, left: 10,
+  },
+  crater2: {
+    position: 'absolute',
+    width: 10, height: 10, borderRadius: 5,
+    backgroundColor: '#334155',
+    bottom: 12, right: 10,
+  },
+  crater3: {
+    position: 'absolute',
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: '#334155',
+    top: 25, left: 22,
   },
   gameOverOverlay: {
     ...StyleSheet.absoluteFillObject, 
@@ -262,28 +329,42 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   gameOverTitle: {
-    color: '#EF4444', 
-    fontSize: 48,
-    fontWeight: 'bold',
+    color: '#F43F5E', 
+    fontSize: 42,
+    fontWeight: '900',
+    letterSpacing: 2,
     marginBottom: 10,
   },
   finalScoreText: {
-    color: '#FFF',
-    fontSize: 24,
+    color: '#F8FAFC',
+    fontSize: 22,
+    fontWeight: '600',
     marginBottom: 10,
   },
   newHighScoreText: {
-    color: '#F59E0B', // Gold/orange color
+    color: '#FBBF24', 
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '800',
+    letterSpacing: 1,
     marginBottom: 30,
   },
   restartButton: {
     backgroundColor: '#10B981', 
-    paddingVertical: 15,
+    paddingVertical: 16,
     paddingHorizontal: 40,
-    borderRadius: 12,
+    borderRadius: 25,
     marginTop: 20,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  restartButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
   controlsContainer: {
     position: 'absolute',
@@ -292,27 +373,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-evenly',
     alignItems: 'center',
-    paddingBottom: 40, 
-    paddingTop: 20,
-    backgroundColor: '#1E293B',
-    borderTopWidth: 2,
-    borderTopColor: '#334155',
+    paddingBottom: 50, 
+    paddingTop: 40,
     zIndex: 10,
   },
   controlButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 12,
-    elevation: 3, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    paddingVertical: 18,
+    paddingHorizontal: 40,
+    borderRadius: 30,
   },
   controlText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
 });
